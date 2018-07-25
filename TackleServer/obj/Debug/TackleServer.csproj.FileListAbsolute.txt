@@ -1,0 +1,7 @@
+C:\Users\Myles\Documents\C#\Projects\TackleServer\TackleServer\bin\Debug\TackleServer.exe.config
+C:\Users\Myles\Documents\C#\Projects\TackleServer\TackleServer\bin\Debug\TackleServer.exe
+C:\Users\Myles\Documents\C#\Projects\TackleServer\TackleServer\bin\Debug\TackleServer.pdb
+C:\Users\Myles\Documents\C#\Projects\TackleServer\TackleServer\obj\Debug\TackleServer.csprojResolveAssemblyReference.cache
+C:\Users\Myles\Documents\C#\Projects\TackleServer\TackleServer\obj\Debug\TackleServer.csproj.CoreCompileInputs.cache
+C:\Users\Myles\Documents\C#\Projects\TackleServer\TackleServer\obj\Debug\TackleServer.exe
+C:\Users\Myles\Documents\C#\Projects\TackleServer\TackleServer\obj\Debug\TackleServer.pdb
