@@ -43,37 +43,115 @@ namespace TackleServer
                 Thread.Sleep(300);
             }
 
-            void HandleRequest(Socket client, ServerRequest clientRequest)
-            {
-                if(clientRequest.requestSource == "SIGNUP")
-                {
-                    string username = clientRequest.requestParameters[0];
-                    string password = clientRequest.requestParameters[1];
-                    int userType = Int32.Parse(clientRequest.requestParameters[2]);
+            
+        }
 
-                    SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;");
+        static void HandleRequest(Socket client, ServerRequest clientRequest)
+        {
+            if (clientRequest.requestSource == "SIGNUP")
+            {
+                string username = clientRequest.requestParameters[0];
+                string password = clientRequest.requestParameters[1];
+                int userType = Int32.Parse(clientRequest.requestParameters[2]);
+
+
+                //Escapes any apostrophies in the usernames or passwords so that syntax errors with apostrophes can't occur
+                username = username.Replace("'", "''");
+                password = password.Replace("'", "''");
+
+                using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+                {
                     databaseConnection.Open();
 
-                    //Escapes any apostrophies in the usernames or passwords so that syntax errors with apostrophes can't occur
-                    username = username.Replace("'", "''");
-                    password = password.Replace("'", "''");
-
                     string SQL = $"INSERT INTO Users (Username,Password,UserType) VALUES ('{username}','{password}',{userType})";
-                    SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection);
-                    command.ExecuteNonQuery();
+                    using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                    {
+                        int queryResponse = command.ExecuteNonQuery();
+                        string responseString;
 
-                    Console.WriteLine($"Sign up request handled for user '{username}' at {client.RemoteEndPoint}");
-                    byte[] response = new byte[] {1};
-                    client.Send(response);
-                    client.Close();
+                        if (queryResponse == 0)
+                        {
+                            Console.WriteLine($"Failed signup request from user at {client.RemoteEndPoint}");
+                            responseString = "FAILED";
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Sign up request handled for user '{username}' at {client.RemoteEndPoint}");
+                            responseString = "SUCCESS";
+                        }
+
+                        byte[] response = new byte[16];
+                        response = Encoding.UTF8.GetBytes(responseString);
+
+                        client.Send(response);
+                    }
+
+                }
+
+                
+            }
+            else if (clientRequest.requestSource == "LOGIN")
+            {
+                string username = clientRequest.requestParameters[0];
+                string password = clientRequest.requestParameters[1];
+
+                //Escapes any apostrophies in the usernames or passwords so that syntax errors with apostrophes can't occur
+                username = username.Replace("'", "''");
+                password = password.Replace("'", "''");
+
+                using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+                {
+                    databaseConnection.Open();
+
+                    string SQL = $"SELECT * FROM Users WHERE username = '{username}' AND password = '{password}'";
+
+                    using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                    {
+                        int userType = 0;
+
+                        using (SQLiteDataReader rdr = command.ExecuteReader())
+                        {
+                            if (rdr.Read())
+                            {
+                                userType = rdr.GetInt32(2);
+                            }
+                        }
+
+                        LogInResponse logResponse = new LogInResponse();
+                        logResponse.requestSuccess = true;
+                        logResponse.userType = userType;
+
+                        string jsonResponse = Serialise(logResponse);
+
+                        byte[] response = new byte[64];
+
+                        response = Encoding.UTF8.GetBytes(jsonResponse);
+
+
+                        client.Send(response);
+
+                        Console.WriteLine($"\nClient at {client.RemoteEndPoint} tried to log in with a {logResponse.requestSuccess} response\n");
+                    }
                 }
             }
         }
 
-        class ServerRequest
+        public static string Serialise(LogInResponse response)
         {
-            public string requestSource;
-            public string[] requestParameters;
+            string json = JsonConvert.SerializeObject(response, Formatting.Indented);
+            return json;
         }
+    }
+
+    class LogInResponse
+    {
+        public bool requestSuccess;
+        public int userType;
+    }
+
+    class ServerRequest
+    {
+        public string requestSource;
+        public string[] requestParameters;
     }
 }
