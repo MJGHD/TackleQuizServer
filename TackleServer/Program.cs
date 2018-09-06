@@ -13,6 +13,7 @@ using System.Data.SQLite;
 
 namespace TackleServer
 {
+    //TODO: convert instances of "userType" to "isTeacher"
     class Program
     {
         static void Main()
@@ -52,7 +53,7 @@ namespace TackleServer
             {
                 string username = clientRequest.requestParameters[0];
                 string password = clientRequest.requestParameters[1];
-                int userType = Int32.Parse(clientRequest.requestParameters[2]);
+                bool isTeacher = Convert.ToBoolean(clientRequest.requestParameters[2]);
 
 
                 //Escapes any apostrophies in the usernames or passwords so that syntax errors with apostrophes can't occur
@@ -63,27 +64,30 @@ namespace TackleServer
                 {
                     databaseConnection.Open();
 
-                    string SQL = $"INSERT INTO Users (Username,Password,UserType) VALUES ('{username}','{password}',{userType})";
+                    string SQL = $"INSERT INTO Users (Username,Password,IsTeacher) VALUES ('{username}','{password}','{isTeacher.ToString()}')";
                     using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
                     {
                         int queryResponse = command.ExecuteNonQuery();
-                        string responseString;
+                        string jsonResponse;
 
                         if (queryResponse == 0)
                         {
                             Console.WriteLine($"Failed signup request from user at {client.RemoteEndPoint}");
-                            responseString = "FAILED";
+                            //responseString = "FAILED";
                         }
                         else
                         {
                             Console.WriteLine($"Sign up request handled for user '{username}' at {client.RemoteEndPoint}");
-                            responseString = "SUCCESS";
+                            LogInResponse signUpResponse = new LogInResponse();
+                            signUpResponse.requestSuccess = true;
+                            signUpResponse.isTeacher = isTeacher;
+                            jsonResponse = Serialise(signUpResponse);
+                            byte[] response = new byte[64];
+                            response = Encoding.UTF8.GetBytes(jsonResponse);
+                            client.Send(response);
                         }
 
-                        byte[] response = new byte[16];
-                        response = Encoding.UTF8.GetBytes(responseString);
-
-                        client.Send(response);
+                        
                     }
 
                 }
@@ -107,19 +111,19 @@ namespace TackleServer
 
                     using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
                     {
-                        int userType = 0;
+                        bool isTeacher = false;
 
                         using (SQLiteDataReader rdr = command.ExecuteReader())
                         {
                             if (rdr.Read())
                             {
-                                userType = rdr.GetInt32(2);
+                                isTeacher = Convert.ToBoolean(rdr.GetString(2));
                             }
                         }
 
                         LogInResponse logResponse = new LogInResponse();
                         logResponse.requestSuccess = true;
-                        logResponse.userType = userType;
+                        logResponse.isTeacher = isTeacher;
 
                         string jsonResponse = Serialise(logResponse);
 
@@ -146,7 +150,7 @@ namespace TackleServer
     class LogInResponse
     {
         public bool requestSuccess;
-        public int userType;
+        public bool isTeacher;
     }
 
     class ServerRequest

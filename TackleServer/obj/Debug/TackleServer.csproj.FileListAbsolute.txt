@@ -23,3 +23,22 @@ C:\Users\Myles\Documents\Computing Project\TackleQuizServer\TackleServer\bin\Deb
 C:\Users\Myles\Documents\Computing Project\TackleQuizServer\TackleServer\bin\Debug\EntityFramework.SqlServer.xml
 C:\Users\Myles\Documents\Computing Project\TackleQuizServer\TackleServer\bin\Debug\System.Data.SQLite.xml
 C:\Users\Myles\Documents\Computing Project\TackleQuizServer\TackleServer\bin\Debug\System.Data.SQLite.dll.config
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\TackleServer.exe.config
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\TackleServer.exe
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\TackleServer.pdb
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\EntityFramework.dll
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\EntityFramework.SqlServer.dll
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\Newtonsoft.Json.dll
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\System.Data.SQLite.dll
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\System.Data.SQLite.EF6.dll
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\System.Data.SQLite.Linq.dll
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\EntityFramework.xml
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\EntityFramework.SqlServer.xml
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\Newtonsoft.Json.xml
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\System.Data.SQLite.xml
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\bin\Debug\System.Data.SQLite.dll.config
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\obj\Debug\TackleServer.csprojResolveAssemblyReference.cache
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\obj\Debug\TackleServer.csproj.CoreCompileInputs.cache
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\obj\Debug\TackleServer.csproj.CopyComplete
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\obj\Debug\TackleServer.exe
+C:\Users\Myles\Documents\CompSci\TackleQuizServer\TackleServer\obj\Debug\TackleServer.pdb
