@@ -30,21 +30,25 @@ namespace TackleServer
                     Socket client = server.AcceptSocket();
                     Console.WriteLine("Client handling thread started");
 
-                    Thread clientReceiveThread = new Thread(() =>
-                    {
-                        byte[] message = new byte[1024];
-                        client.Receive(message);
-                        string jsonReceived = Encoding.Default.GetString(message);
-                        ServerRequest clientRequest = JsonConvert.DeserializeObject<ServerRequest>(jsonReceived);
-                        HandleRequest(client, clientRequest);
-                    });
+                    Thread clientReceiveThread = new Thread(new ParameterizedThreadStart(ClientHandlingThread));
 
-                    clientReceiveThread.Start();
+                    clientReceiveThread.Start(client);
                 }
                 Thread.Sleep(300);
             }
 
             
+        }
+
+        public static void ClientHandlingThread(object param)
+        {
+            Socket client = (Socket)param;
+
+            byte[] message = new byte[1024];
+            client.Receive(message);
+            string jsonReceived = Encoding.Default.GetString(message);
+            ServerRequest clientRequest = JsonConvert.DeserializeObject<ServerRequest>(jsonReceived);
+            HandleRequest(client, clientRequest);
         }
 
         static void HandleRequest(Socket client, ServerRequest clientRequest)
@@ -67,27 +71,23 @@ namespace TackleServer
                     string SQL = $"INSERT INTO Users (Username,Password,IsTeacher) VALUES ('{username}','{password}','{isTeacher.ToString()}')";
                     using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
                     {
-                        int queryResponse = command.ExecuteNonQuery();
-                        string jsonResponse;
+                        LogInResponse signUpResponse = new LogInResponse();
 
-                        if (queryResponse == 0)
+                        try
                         {
-                            Console.WriteLine($"Failed signup request from user at {client.RemoteEndPoint}");
-                            //responseString = "FAILED";
-                        }
-                        else
-                        {
+                            int queryResponse = command.ExecuteNonQuery();
+
                             Console.WriteLine($"Sign up request handled for user '{username}' at {client.RemoteEndPoint}");
-                            LogInResponse signUpResponse = new LogInResponse();
                             signUpResponse.requestSuccess = true;
                             signUpResponse.isTeacher = isTeacher;
-                            jsonResponse = Serialise(signUpResponse);
-                            byte[] response = new byte[64];
-                            response = Encoding.UTF8.GetBytes(jsonResponse);
-                            client.Send(response);
+                            LogInSendToClient(client, signUpResponse);
                         }
-
-                        
+                        catch
+                        {
+                            Console.WriteLine($"Sign up request failed at {client.RemoteEndPoint}");
+                            signUpResponse.requestSuccess = false;
+                            LogInSendToClient(client,signUpResponse);
+                        }
                     }
 
                 }
@@ -107,32 +107,26 @@ namespace TackleServer
                 {
                     databaseConnection.Open();
 
+                    LogInResponse logResponse = new LogInResponse();
+
                     string SQL = $"SELECT * FROM Users WHERE username = '{username}' AND password = '{password}'";
 
                     using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
                     {
-                        bool isTeacher = false;
 
                         using (SQLiteDataReader rdr = command.ExecuteReader())
                         {
                             if (rdr.Read())
                             {
-                                isTeacher = Convert.ToBoolean(rdr.GetString(2));
+                                logResponse.requestSuccess = true;
+                                logResponse.isTeacher = Convert.ToBoolean(rdr.GetString(2));
+                            }
+                            else
+                            {
+                                logResponse.requestSuccess = false;
                             }
                         }
-
-                        LogInResponse logResponse = new LogInResponse();
-                        logResponse.requestSuccess = true;
-                        logResponse.isTeacher = isTeacher;
-
-                        string jsonResponse = Serialise(logResponse);
-
-                        byte[] response = new byte[64];
-
-                        response = Encoding.UTF8.GetBytes(jsonResponse);
-
-
-                        client.Send(response);
+                        LogInSendToClient(client, logResponse);
 
                         Console.WriteLine($"\nClient at {client.RemoteEndPoint} tried to log in with a {logResponse.requestSuccess} response\n");
                     }
@@ -140,10 +134,20 @@ namespace TackleServer
             }
         }
 
-        public static string Serialise(LogInResponse response)
+        //Serialises the log in/sign up response object to a JSON string
+        static string Serialise(LogInResponse response)
         {
             string json = JsonConvert.SerializeObject(response, Formatting.Indented);
             return json;
+        }
+
+        //Sends the result of the log in/sign up request to the client
+        static void LogInSendToClient(Socket client, LogInResponse response)
+        {
+            string jsonResponse = Serialise(response);
+            byte[] responseBytes = new byte[64];
+            responseBytes = Encoding.UTF8.GetBytes(jsonResponse);
+            client.Send(responseBytes);
         }
     }
 
