@@ -13,7 +13,6 @@ using System.Data.SQLite;
 
 namespace TackleServer
 {
-    //TODO: convert instances of "userType" to "isTeacher"
     class Program
     {
         static void Main()
@@ -40,6 +39,7 @@ namespace TackleServer
             
         }
 
+        //The function that is called when the thread for handling a client is started
         public static void ClientHandlingThread(object param)
         {
             Socket client = (Socket)param;
@@ -51,6 +51,7 @@ namespace TackleServer
             HandleRequest(client, clientRequest);
         }
 
+        //Handles the client's request
         static void HandleRequest(Socket client, ServerRequest clientRequest)
         {
             if (clientRequest.requestSource == "SIGNUP")
@@ -130,6 +131,20 @@ namespace TackleServer
 
                         Console.WriteLine($"\nClient at {client.RemoteEndPoint} tried to log in with a {logResponse.requestSuccess} response\n");
                     }
+                }
+            }
+            else if (clientRequest.requestSource == "CREATECLASS")
+            {
+                using(SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+                {
+                    //Create class
+                }
+            }
+            else if (clientRequest.requestSource == "JOINCLASS")
+            {
+                using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+                {
+                    //Join class
                 }
             }
         }
