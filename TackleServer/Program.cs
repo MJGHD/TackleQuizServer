@@ -1,15 +1,11 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using Newtonsoft.Json;
 using System.Data.SQLite;
+using System.Collections.Generic;
 
 namespace TackleServer
 {
@@ -54,97 +50,112 @@ namespace TackleServer
         //Handles the client's request
         static void HandleRequest(Socket client, ServerRequest clientRequest)
         {
-            if (clientRequest.requestSource == "SIGNUP")
+            switch (clientRequest.requestSource)
             {
-                string username = clientRequest.requestParameters[0];
-                string password = clientRequest.requestParameters[1];
-                bool isTeacher = Convert.ToBoolean(clientRequest.requestParameters[2]);
+                case "SIGNUP":
+                    HandleSignup(client, clientRequest);
+                    break;
+                case "LOGIN":
+                    HandleLogin(client, clientRequest);
+                    break;
+                case "SUBMITRESULTS":
+                    HandleResultSubmit(client, clientRequest);
+                    break;
+            }
+        }
 
+        static void HandleResultSubmit(Socket client, ServerRequest clientRequest)
+        {
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
 
-                //Escapes any apostrophies in the usernames or passwords so that syntax errors with apostrophes can't occur
-                username = username.Replace("'", "''");
-                password = password.Replace("'", "''");
+                //Escapes any of apostrophes in the JSON
+                clientRequest.requestParameters[2] = clientRequest.requestParameters[2].Replace("'", "''");
 
-                using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+                string SQL = $"INSERT INTO QuizAttempts (QuizID,Username,QuizInfo) VALUES ('{clientRequest.requestParameters[0]}','{clientRequest.requestParameters[1]}','{clientRequest.requestParameters[2]}')";
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
                 {
-                    databaseConnection.Open();
+                    int modifiedRows = command.ExecuteNonQuery();
+                    Console.WriteLine($"Result submission request handled with {0} row(s) affected", modifiedRows);
+                }
+            }
+        }
 
-                    string SQL = $"INSERT INTO Users (Username,Password,IsTeacher) VALUES ('{username}','{password}','{isTeacher.ToString()}')";
-                    using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+        static void HandleLogin(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+            string password = clientRequest.requestParameters[1];
+
+            //Escapes any apostrophies in the usernames or passwords so that syntax errors with apostrophes can't occur
+            username = username.Replace("'", "''");
+            password = password.Replace("'", "''");
+
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                LogInResponse logResponse = new LogInResponse();
+
+                string SQL = $"SELECT * FROM Users WHERE username = '{username}' AND password = '{password}'";
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+
+                    using (SQLiteDataReader rdr = command.ExecuteReader())
                     {
-                        LogInResponse signUpResponse = new LogInResponse();
-
-                        try
+                        if (rdr.Read())
                         {
-                            int queryResponse = command.ExecuteNonQuery();
-
-                            Console.WriteLine($"Sign up request handled for user '{username}' at {client.RemoteEndPoint}");
-                            signUpResponse.requestSuccess = true;
-                            signUpResponse.isTeacher = isTeacher;
-                            LogInSendToClient(client, signUpResponse);
+                            logResponse.requestSuccess = true;
+                            logResponse.isTeacher = Convert.ToBoolean(rdr.GetString(2));
                         }
-                        catch
+                        else
                         {
-                            Console.WriteLine($"Sign up request failed at {client.RemoteEndPoint}");
-                            signUpResponse.requestSuccess = false;
-                            LogInSendToClient(client,signUpResponse);
+                            logResponse.requestSuccess = false;
                         }
                     }
+                    LogInSendToClient(client, logResponse);
 
+                    Console.WriteLine($"\nClient at {client.RemoteEndPoint} tried to log in with a {logResponse.requestSuccess} response\n");
                 }
-
-                
             }
-            else if (clientRequest.requestSource == "LOGIN")
+        }
+
+        static void HandleSignup(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+            string password = clientRequest.requestParameters[1];
+            bool isTeacher = Convert.ToBoolean(clientRequest.requestParameters[2]);
+
+
+            //Escapes any apostrophies in the usernames or passwords so that syntax errors with apostrophes can't occur
+            username = username.Replace("'", "''");
+            password = password.Replace("'", "''");
+
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
             {
-                string username = clientRequest.requestParameters[0];
-                string password = clientRequest.requestParameters[1];
+                databaseConnection.Open();
 
-                //Escapes any apostrophies in the usernames or passwords so that syntax errors with apostrophes can't occur
-                username = username.Replace("'", "''");
-                password = password.Replace("'", "''");
-
-                using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+                string SQL = $"INSERT INTO Users (Username,Password,IsTeacher) VALUES ('{username}','{password}','{isTeacher.ToString()}')";
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
                 {
-                    databaseConnection.Open();
+                    LogInResponse signUpResponse = new LogInResponse();
 
-                    LogInResponse logResponse = new LogInResponse();
-
-                    string SQL = $"SELECT * FROM Users WHERE username = '{username}' AND password = '{password}'";
-
-                    using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                    try
                     {
+                        int queryResponse = command.ExecuteNonQuery();
 
-                        using (SQLiteDataReader rdr = command.ExecuteReader())
-                        {
-                            if (rdr.Read())
-                            {
-                                logResponse.requestSuccess = true;
-                                logResponse.isTeacher = Convert.ToBoolean(rdr.GetString(2));
-                            }
-                            else
-                            {
-                                logResponse.requestSuccess = false;
-                            }
-                        }
-                        LogInSendToClient(client, logResponse);
-
-                        Console.WriteLine($"\nClient at {client.RemoteEndPoint} tried to log in with a {logResponse.requestSuccess} response\n");
+                        Console.WriteLine($"Sign up request handled for user '{username}' at {client.RemoteEndPoint}");
+                        signUpResponse.requestSuccess = true;
+                        signUpResponse.isTeacher = isTeacher;
+                        LogInSendToClient(client, signUpResponse);
                     }
-                }
-            }
-            else if (clientRequest.requestSource == "CREATECLASS")
-            {
-                using(SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
-                {
-                    //Create class
-                }
-            }
-            else if (clientRequest.requestSource == "JOINCLASS")
-            {
-                using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
-                {
-                    //Join class
+                    catch
+                    {
+                        Console.WriteLine($"Sign up request failed at {client.RemoteEndPoint}");
+                        signUpResponse.requestSuccess = false;
+                        LogInSendToClient(client, signUpResponse);
+                    }
                 }
             }
         }
@@ -177,4 +188,4 @@ namespace TackleServer
         public string requestSource;
         public string[] requestParameters;
     }
-}
+    }
