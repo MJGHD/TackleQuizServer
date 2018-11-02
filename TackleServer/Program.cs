@@ -61,6 +61,9 @@ namespace TackleServer
                 case "SUBMITRESULTS":
                     HandleResultSubmit(client, clientRequest);
                     break;
+                case "JOINCLASS":
+                    HandleJoinClass(client, clientRequest);
+                    break;
             }
         }
 
@@ -160,6 +163,50 @@ namespace TackleServer
             }
         }
 
+        static void HandleJoinClass(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+            string classID = clientRequest.requestParameters[1];
+
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                //Checking if the class exists
+                string SQL = $"SELECT * FROM Classes WHERE ClassID='{classID}'";
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    try
+                    {
+                        command.ExecuteNonQuery();
+
+                        //Checking that the user's not in the class - if they are, then an exception will be thrown so that the catch will catch it
+                        SQL = $"SELECT * FROM UserClasses WHERE ClassID='{classID}' AND Username='{username}'";
+                        command.CommandText = SQL;
+                        int queryResponse = command.ExecuteNonQuery();
+                        if (queryResponse > 0)
+                        {
+                            Console.WriteLine($"{username} is already in {classID}");
+                            throw new SQLiteException();
+                        }
+
+                        //Inserting the row that makes the user join the class
+                        SQL = $"INSERT INTO UserClasses (ClassID,Username) VALUES ('{classID}','{username}')";
+                        command.CommandText = SQL;
+                        command.ExecuteNonQuery();
+
+                        Console.WriteLine($"User {username} at {client.RemoteEndPoint} joined class {classID}");
+                        JoinClassSendToClient(client, "success");
+                    }
+                    catch
+                    {
+                        Console.WriteLine($"User {username} at {client.RemoteEndPoint} failed to join class {classID}");
+                        JoinClassSendToClient(client, "failed");
+                    }
+                }
+            }
+        }
+
         //Serialises the log in/sign up response object to a JSON string
         static string Serialise(LogInResponse response)
         {
@@ -173,6 +220,13 @@ namespace TackleServer
             string jsonResponse = Serialise(response);
             byte[] responseBytes = new byte[64];
             responseBytes = Encoding.UTF8.GetBytes(jsonResponse);
+            client.Send(responseBytes);
+        }
+
+        static void JoinClassSendToClient(Socket client, string success)
+        {
+            byte[] responseBytes = new byte[64];
+            responseBytes = Encoding.UTF8.GetBytes(success);
             client.Send(responseBytes);
         }
     }
