@@ -178,13 +178,21 @@ namespace TackleServer
                 {
                     try
                     {
-                        command.ExecuteNonQuery();
+                        //Executes the reader to check if any rows are returned by the query - if not then an SQLite exception to be caught by
+                        //the catch is thrown
+                        var reader = command.ExecuteReader();
+
+                        if (!reader.HasRows)
+                        {
+                            throw new SQLiteException();
+                        }
+                        
 
                         //Checking that the user's not in the class - if they are, then an exception will be thrown so that the catch will catch it
                         SQL = $"SELECT * FROM UserClasses WHERE ClassID='{classID}' AND Username='{username}'";
                         command.CommandText = SQL;
-                        int queryResponse = command.ExecuteNonQuery();
-                        if (queryResponse > 0)
+                        reader = command.ExecuteReader();
+                        if (reader.HasRows)
                         {
                             Console.WriteLine($"{username} is already in {classID}");
                             throw new SQLiteException();
