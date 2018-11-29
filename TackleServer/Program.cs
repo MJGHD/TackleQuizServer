@@ -64,6 +64,9 @@ namespace TackleServer
                 case "JOINCLASS":
                     HandleJoinClass(client, clientRequest);
                     break;
+                case "QUIZMARKINGVIEW":
+                    HandleQuizAttemptReturn(client, clientRequest);
+                    break;
             }
         }
 
@@ -215,6 +218,38 @@ namespace TackleServer
             }
         }
 
+        static void HandleQuizAttemptReturn(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+            string quizID = clientRequest.requestParameters[1];
+
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                //Getting the QuizAttempt row
+                string SQL = $"SELECT * FROM QuizAttempts WHERE QuizID='{quizID}' AND Username='{username}';";
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    string QuizAttempt;
+
+                    //Executes the reader to read the QuizAttempt row
+                    using (SQLiteDataReader rdr = command.ExecuteReader())
+                    {
+                        if (rdr.Read())
+                        {
+                            QuizAttempt = rdr.GetString(2);
+                        }
+                        else
+                        {
+                            QuizAttempt = "FALSE";
+                        }
+                        QuizAttemptSendToClient(client, QuizAttempt);
+                    }
+                }
+            }
+        }
+
         //Serialises the log in/sign up response object to a JSON string
         static string Serialise(LogInResponse response)
         {
@@ -235,6 +270,13 @@ namespace TackleServer
         {
             byte[] responseBytes = new byte[64];
             responseBytes = Encoding.UTF8.GetBytes(success);
+            client.Send(responseBytes);
+        }
+
+        static void QuizAttemptSendToClient(Socket client, string QuizAttempt)
+        {
+            byte[] responseBytes = new byte[Encoding.UTF8.GetBytes(QuizAttempt).Length];
+            responseBytes = Encoding.UTF8.GetBytes(QuizAttempt);
             client.Send(responseBytes);
         }
     }
