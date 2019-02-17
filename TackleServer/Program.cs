@@ -66,6 +66,9 @@ namespace TackleServer
                 case "QUIZMARKINGVIEW":
                     HandleQuizAttemptReturn(client, clientRequest);
                     break;
+                case "CREATEQUIZ":
+                    HandleCreateQuiz(client, clientRequest);
+                    break;
             }
         }
 
@@ -85,6 +88,7 @@ namespace TackleServer
                     Console.WriteLine($"Result submission request handled with {0} row(s) affected", modifiedRows);
                 }
             }
+            client.Close();
         }
 
         static void HandleLogin(Socket client, ServerRequest clientRequest)
@@ -249,6 +253,18 @@ namespace TackleServer
             }
         }
 
+        static void HandleCreateQuiz(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+            string quizType = clientRequest.requestParameters[1];
+            string quizTitle = clientRequest.requestParameters[2];
+            string quizContent = clientRequest.requestParameters[3];
+
+            string success = CreateQuiz(username, quizType,quizTitle,quizContent);
+
+            CreateQuizSendToClient(client,success);
+        }
+
         //Serialises the log in/sign up response object to a JSON string
         static string Serialise(LogInResponse response)
         {
@@ -263,6 +279,7 @@ namespace TackleServer
             byte[] responseBytes = new byte[64];
             responseBytes = Encoding.UTF8.GetBytes(jsonResponse);
             client.Send(responseBytes);
+            client.Close();
         }
 
         static void JoinClassSendToClient(Socket client, string success)
@@ -270,6 +287,7 @@ namespace TackleServer
             byte[] responseBytes = new byte[64];
             responseBytes = Encoding.UTF8.GetBytes(success);
             client.Send(responseBytes);
+            client.Close();
         }
 
         static void QuizAttemptSendToClient(Socket client, string QuizAttempt)
@@ -277,6 +295,44 @@ namespace TackleServer
             byte[] responseBytes = new byte[Encoding.UTF8.GetBytes(QuizAttempt).Length];
             responseBytes = Encoding.UTF8.GetBytes(QuizAttempt);
             client.Send(responseBytes);
+            client.Close();
+        }
+
+        static void CreateQuizSendToClient(Socket client, string success)
+        {
+            byte[] responseBytes = new byte[64];
+            responseBytes = Encoding.UTF8.GetBytes(success);
+            client.Send(responseBytes);
+            client.Close();
+        }
+
+        static string CreateQuiz(string username, string quizType, string quizTitle, string quizContent)
+        {
+            //Escapes any apostrophies to prevent syntax errors/SQL injection
+            quizTitle = quizTitle.Replace("'", "''");
+            quizContent = quizContent.Replace("'", "''");
+
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                string SQL = $"INSERT INTO Quizzes (Username,QuizType,QuizName, QuizContent) VALUES ('{username}','{quizType}','{quizTitle}','{quizContent}')";
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    try
+                    {
+                        int queryResponse = command.ExecuteNonQuery();
+
+                        Console.WriteLine($"New quiz created, title {quizTitle}");
+                        return "success";
+                    }
+                    catch
+                    {
+                        Console.WriteLine($"Quiz creation failed");
+                        return "failed";
+                    }
+                }
+            }
         }
     }
 
