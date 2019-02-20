@@ -5,6 +5,8 @@ using System.Text;
 using System.Threading;
 using Newtonsoft.Json;
 using System.Data.SQLite;
+using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace TackleServer
 {
@@ -69,6 +71,12 @@ namespace TackleServer
                 case "CREATEQUIZ":
                     HandleCreateQuiz(client, clientRequest);
                     break;
+                case "QUIZLIST":
+                    HandleQuizList(client, clientRequest);
+                    break;
+                case "OPENQUIZ":
+                    HandleOpenQuiz(client, clientRequest);
+                    break;
             }
         }
 
@@ -124,8 +132,6 @@ namespace TackleServer
                         }
                     }
                     LogInSendToClient(client, logResponse);
-
-                    Console.WriteLine($"\nClient at {client.RemoteEndPoint} tried to log in with a {logResponse.requestSuccess} response\n");
                 }
             }
         }
@@ -265,10 +271,91 @@ namespace TackleServer
             CreateQuizSendToClient(client,success);
         }
 
+        static void HandleQuizList(Socket client, ServerRequest clientRequest)
+        {
+            string searchTerm = clientRequest.requestParameters[0];
+
+            //Replaces UTF-8 \0 whitespace with blank
+            searchTerm = searchTerm.Replace("\0", string.Empty);
+
+            //Replaces apostrophies to prevent syntax errors/SQL injection
+            searchTerm = searchTerm.Replace("'", "''");
+
+            string SQL = "SELECT QuizID, Username, QuizType, QuizName FROM Quizzes";
+
+            //If there's a search term, add WHERE to the SQL query
+            if (searchTerm != "")
+            {
+                SQL += $" WHERE QuizName='{searchTerm}'";
+            }
+
+            QuizList list = new QuizList();
+
+            //SQLite search
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    command.CommandText = SQL;
+                    var reader = command.ExecuteReader();
+
+                    while (reader.Read())
+                    {
+                        list.quizIDs.Add(reader.GetInt32(0));
+                        list.usernames.Add(reader.GetString(1));
+                        list.quizType.Add(reader.GetString(2));
+                        list.quizNames.Add(reader.GetString(3));
+                    }
+                }
+
+            }
+            
+            QuizListSendToClient(client, list);
+        }
+
+        static void HandleOpenQuiz(Socket client, ServerRequest clientRequest)
+        {
+            int quizID = Int32.Parse(clientRequest.requestParameters[0]);
+
+            string SQL = $"SELECT QuizContent FROM Quizzes WHERE QuizID='{quizID}'";
+
+            QuizList list = new QuizList();
+
+            string JSON = "";
+
+            //SQLite search
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    command.CommandText = SQL;
+                    var reader = command.ExecuteReader();
+
+                    while (reader.Read())
+                    {
+                        JSON = reader.GetString(0);
+                    }
+                }
+            }
+
+            OpenQuizSendToClient(client, JSON);
+        }
+
         //Serialises the log in/sign up response object to a JSON string
         static string Serialise(LogInResponse response)
         {
             string json = JsonConvert.SerializeObject(response, Formatting.Indented);
+            return json;
+        }
+
+        //Serialises QuizList list
+        static string Serialise(QuizList list)
+        {
+            string json = JsonConvert.SerializeObject(list, Formatting.Indented);
             return json;
         }
 
@@ -302,6 +389,23 @@ namespace TackleServer
         {
             byte[] responseBytes = new byte[64];
             responseBytes = Encoding.UTF8.GetBytes(success);
+            client.Send(responseBytes);
+            client.Close();
+        }
+
+        static void QuizListSendToClient(Socket client, QuizList list)
+        {
+            string jsonResponse = Serialise(list);
+            byte[] responseBytes = new byte[1000];
+            responseBytes = Encoding.UTF8.GetBytes(jsonResponse);
+            client.Send(responseBytes);
+            client.Close();
+        }
+
+        static void OpenQuizSendToClient(Socket client, string JSON)
+        {
+            byte[] responseBytes = new byte[1000];
+            responseBytes = Encoding.UTF8.GetBytes(JSON);
             client.Send(responseBytes);
             client.Close();
         }
@@ -346,5 +450,23 @@ namespace TackleServer
     {
         public string requestSource;
         public string[] requestParameters;
+    }
+
+    //Lists to append the quiz listing info to
+    class QuizList
+    {
+        public List<int> quizIDs;
+        public List<string> usernames;
+        public List<string> quizType;
+        public List<string> quizNames;
+
+        public QuizList()
+        {
+            //Initiates all of the lists
+            quizIDs = new List<int>();
+            usernames = new List<string>();
+            quizType = new List<string>();
+            quizNames = new List<string>();
+        }
     }
     }
