@@ -65,6 +65,15 @@ namespace TackleServer
                 case "JOINCLASS":
                     HandleJoinClass(client, clientRequest);
                     break;
+                case "CREATECLASS":
+                    HandleCreateClass(client, clientRequest);
+                    break;
+                case "CLASSLIST":
+                    HandleClassList(client, clientRequest);
+                    break;
+                case "DELETECLASS":
+                    HandleDeleteClass(client, clientRequest);
+                    break;
                 case "QUIZMARKINGVIEW":
                     HandleQuizAttemptReturn(client, clientRequest);
                     break;
@@ -186,6 +195,7 @@ namespace TackleServer
 
                 //Checking if the class exists
                 string SQL = $"SELECT * FROM Classes WHERE ClassID='{classID}'";
+
                 using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
                 {
                     try
@@ -198,7 +208,8 @@ namespace TackleServer
                         {
                             throw new SQLiteException();
                         }
-                        
+
+                        command.Reset();
 
                         //Checking that the user's not in the class - if they are, then an exception will be thrown so that the catch will catch it
                         SQL = $"SELECT * FROM UserClasses WHERE ClassID='{classID}' AND Username='{username}'";
@@ -210,18 +221,118 @@ namespace TackleServer
                             throw new SQLiteException();
                         }
 
+                        command.Reset();
+
                         //Inserting the row that makes the user join the class
                         SQL = $"INSERT INTO UserClasses (ClassID,Username) VALUES ('{classID}','{username}')";
+                        command.CommandText = SQL;
+                        command.ExecuteNonQuery();
+
+                        //Increasing the class' member count
+                        SQL = $"UPDATE Classes SET MemberCount = MemberCount + 1 WHERE ClassID={classID}";
                         command.CommandText = SQL;
                         command.ExecuteNonQuery();
 
                         Console.WriteLine($"User {username} at {client.RemoteEndPoint} joined class {classID}");
                         JoinClassSendToClient(client, "success");
                     }
+                    catch (System.InvalidOperationException exception)
+                    {
+                        Console.WriteLine(exception.Message);
+                    }
                     catch
                     {
                         Console.WriteLine($"User {username} at {client.RemoteEndPoint} failed to join class {classID}");
                         JoinClassSendToClient(client, "failed");
+                    }
+                }
+            }
+        }
+
+        static void HandleCreateClass(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                string SQL = $"INSERT INTO Classes (Username, MemberCount) VALUES ('{username}','0');";
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    try
+                    {
+                        command.CommandText = SQL;
+                        command.ExecuteNonQuery();
+                        Console.WriteLine("New class has been created");
+                        CreateClassSendToClient(client, "success");
+                    }
+                    catch
+                    {
+                        Console.WriteLine("Class creation failed");
+                        CreateClassSendToClient(client, "failed");
+                    }
+                }
+            }
+        }
+
+        static void HandleClassList(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+
+            //Replaces UTF-8 \0 whitespace with blank
+            username = username.Replace("\0", string.Empty);
+
+            //Replaces apostrophies to prevent syntax errors/SQL injection
+            username = username.Replace("'", "''");
+
+            string SQL = $"SELECT * FROM Classes WHERE Username='{username}'";
+
+            ClassList list = new ClassList();
+
+            //SQLite search
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    command.CommandText = SQL;
+                    var reader = command.ExecuteReader();
+
+                    while (reader.Read())
+                    {
+                        list.classIDs.Add(reader.GetInt32(0));
+                        list.memberCounts.Add(reader.GetInt32(2));
+                    }
+                }
+
+            }
+            ClassListSendToClient(client, list);
+        }
+
+        static void HandleDeleteClass(Socket client, ServerRequest clientRequest)
+        {
+            string classID = clientRequest.requestParameters[0];
+
+            string SQL = $"DELETE FROM Classes WHERE ClassID='{classID}'";
+
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    try
+                    {
+                        command.CommandText = SQL;
+                        command.ExecuteNonQuery();
+                        DeleteClassSendToClient(client, "success");
+                    }
+                    catch
+                    {
+                        DeleteClassSendToClient(client, "failed");
                     }
                 }
             }
@@ -359,7 +470,15 @@ namespace TackleServer
             return json;
         }
 
-        //Sends the result of the log in/sign up request to the client
+        //Serialises ClassList list
+        static string Serialise(ClassList list)
+        {
+            string json = JsonConvert.SerializeObject(list, Formatting.Indented);
+            return json;
+        }
+
+        //Sends the server response to the client for each type of request
+
         static void LogInSendToClient(Socket client, LogInResponse response)
         {
             string jsonResponse = Serialise(response);
@@ -370,6 +489,22 @@ namespace TackleServer
         }
 
         static void JoinClassSendToClient(Socket client, string success)
+        {
+            byte[] responseBytes = new byte[64];
+            responseBytes = Encoding.UTF8.GetBytes(success);
+            client.Send(responseBytes);
+            client.Close();
+        }
+
+        static void CreateClassSendToClient(Socket client, string success)
+        {
+            byte[] responseBytes = new byte[64];
+            responseBytes = Encoding.UTF8.GetBytes(success);
+            client.Send(responseBytes);
+            client.Close();
+        }
+
+        static void DeleteClassSendToClient(Socket client, string success)
         {
             byte[] responseBytes = new byte[64];
             responseBytes = Encoding.UTF8.GetBytes(success);
@@ -402,6 +537,15 @@ namespace TackleServer
             client.Close();
         }
 
+        static void ClassListSendToClient(Socket client, ClassList list)
+        {
+            string jsonResponse = Serialise(list);
+            byte[] responseBytes = new byte[1000];
+            responseBytes = Encoding.UTF8.GetBytes(jsonResponse);
+            client.Send(responseBytes);
+            client.Close();
+        }
+
         static void OpenQuizSendToClient(Socket client, string JSON)
         {
             byte[] responseBytes = new byte[1000];
@@ -410,6 +554,7 @@ namespace TackleServer
             client.Close();
         }
 
+        //Creates the new quiz row in the database
         static string CreateQuiz(string username, string quizType, string quizTitle, string quizContent)
         {
             //Escapes any apostrophies to prevent syntax errors/SQL injection
@@ -469,4 +614,16 @@ namespace TackleServer
             quizNames = new List<string>();
         }
     }
+
+    class ClassList
+    {
+        public List<int> classIDs;
+        public List<int> memberCounts;
+
+        public ClassList()
+        {
+            classIDs = new List<int>();
+            memberCounts = new List<int>();
+        }
     }
+}
