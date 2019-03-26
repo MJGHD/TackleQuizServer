@@ -376,8 +376,10 @@ namespace TackleServer
             string quizType = clientRequest.requestParameters[1];
             string quizTitle = clientRequest.requestParameters[2];
             string quizContent = clientRequest.requestParameters[3];
+            //weird naming due to "public" being reserved in C# - i'm not bad at naming variables i swear
+            string publicState = clientRequest.requestParameters[4];
 
-            string success = CreateQuiz(username, quizType,quizTitle,quizContent);
+            string success = CreateQuiz(username, quizType,quizTitle,quizContent,publicState);
 
             CreateQuizSendToClient(client,success);
         }
@@ -555,7 +557,7 @@ namespace TackleServer
         }
 
         //Creates the new quiz row in the database
-        static string CreateQuiz(string username, string quizType, string quizTitle, string quizContent)
+        static string CreateQuiz(string username, string quizType, string quizTitle, string quizContent,string publicState)
         {
             //Escapes any apostrophies to prevent syntax errors/SQL injection
             quizTitle = quizTitle.Replace("'", "''");
@@ -565,7 +567,7 @@ namespace TackleServer
             {
                 databaseConnection.Open();
 
-                string SQL = $"INSERT INTO Quizzes (Username,QuizType,QuizName, QuizContent) VALUES ('{username}','{quizType}','{quizTitle}','{quizContent}')";
+                string SQL = $"INSERT INTO Quizzes (Username,QuizType,QuizName, QuizContent, Public) VALUES ('{username}','{quizType}','{quizTitle}','{quizContent}','{publicState}')";
                 using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
                 {
                     try
