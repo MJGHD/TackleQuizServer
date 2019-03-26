@@ -392,12 +392,12 @@ namespace TackleServer
             //Replaces apostrophies to prevent syntax errors/SQL injection
             searchTerm = searchTerm.Replace("'", "''");
 
-            string SQL = "SELECT QuizID, Username, QuizType, QuizName FROM Quizzes";
+            string SQL = $"SELECT QuizID, Username, QuizType, QuizName FROM Quizzes WHERE Public='True'";
 
             //If there's a search term, add WHERE to the SQL query
             if (searchTerm != "")
             {
-                SQL += $" WHERE QuizName='{searchTerm}'";
+                SQL += $" AND QuizName='{searchTerm}'";
             }
 
             QuizList list = new QuizList();
