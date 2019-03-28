@@ -41,7 +41,7 @@ namespace TackleServer
         {
             Socket client = (Socket)param;
 
-            byte[] message = new byte[1024];
+            byte[] message = new byte[50000];
             client.Receive(message);
             string jsonReceived = Encoding.Default.GetString(message);
             ServerRequest clientRequest = JsonConvert.DeserializeObject<ServerRequest>(jsonReceived);
@@ -79,6 +79,21 @@ namespace TackleServer
                     break;
                 case "CREATEQUIZ":
                     HandleCreateQuiz(client, clientRequest);
+                    break;
+                case "CREATEDRAFT":
+                    HandleCreateDraft(client, clientRequest);
+                    break;
+                case "DRAFTLIST":
+                    HandleDraftList(client, clientRequest);
+                    break;
+                case "DELETEDRAFT":
+                    HandleDeleteDraft(client, clientRequest);
+                    break;
+                case "SUBMITQUIZTOCLASS":
+                    HandleSubmitToClass(client, clientRequest);
+                    break;
+                case "SENDTOCLASS":
+                    HandleSendToClass(client, clientRequest);
                     break;
                 case "QUIZLIST":
                     HandleQuizList(client, clientRequest);
@@ -277,6 +292,89 @@ namespace TackleServer
             }
         }
 
+        static void HandleCreateDraft(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+            string quizType = clientRequest.requestParameters[1];
+            string quizTitle = clientRequest.requestParameters[2];
+            string quizContent = clientRequest.requestParameters[3];
+        
+            string success = CreateQuiz(username, quizType, quizTitle, quizContent,"False","True",false);
+            
+            //Sends whether it was a success to the client
+            CreateQuizSendToClient(client, success);
+        }
+
+        static void HandleSubmitToClass(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+            string quizType = clientRequest.requestParameters[1];
+            string quizTitle = clientRequest.requestParameters[2];
+            string quizContent = clientRequest.requestParameters[3];
+            string classID = clientRequest.requestParameters[4];
+
+            string ID = CreateQuiz(username, quizType, quizTitle, quizContent, "False", "False", true);
+
+            string success;
+
+            //If the create quiz query returned an ID, submit it to the SetQuizzes table
+            if(ID != "failed")
+            {
+                success = SetQuiz(ID, classID, username);
+            }
+            else
+            {
+                success = "failed";
+            }
+
+            //Sends whether it was a success to the client
+            CreateQuizSendToClient(client, success);
+        }
+
+        static void HandleSendToClass(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+            string classID = clientRequest.requestParameters[1];
+            string quizID = clientRequest.requestParameters[2];
+
+            string success = SetQuiz(quizID, classID, username);
+
+            //Sends whether it was a success to the client
+            CreateQuizSendToClient(client, success);
+        }
+
+        static void HandleDeleteDraft(Socket client, ServerRequest clientRequest)
+        {
+            string quizID = clientRequest.requestParameters[0];
+
+            Debug.WriteLine(quizID);
+
+            string success;
+
+            try
+            {
+                using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+                {
+                    databaseConnection.Open();
+
+                    string SQL = $"DELETE FROM Quizzes WHERE QuizID='{quizID}'";
+
+                    using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                    {
+                        command.ExecuteNonQuery();
+                        success = "success";
+                    }
+                }
+            }
+            catch
+            {
+                success = "failed";
+            }
+
+            //Sends whether it was a success to the client
+            CreateQuizSendToClient(client, success);
+        }
+
         static void HandleClassList(Socket client, ServerRequest clientRequest)
         {
             string username = clientRequest.requestParameters[0];
@@ -310,6 +408,38 @@ namespace TackleServer
 
             }
             ClassListSendToClient(client, list);
+        }
+
+        static void HandleDraftList(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+
+            string SQL = $"SELECT QuizID, Username, QuizType, QuizName FROM Quizzes WHERE Username='{username}' AND Draft='True'";
+
+            QuizList list = new QuizList();
+
+            //SQLite search
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    command.CommandText = SQL;
+                    var reader = command.ExecuteReader();
+
+                    while (reader.Read())
+                    {
+                        list.quizIDs.Add(reader.GetInt32(0));
+                        list.usernames.Add(reader.GetString(1));
+                        list.quizType.Add(reader.GetString(2));
+                        list.quizNames.Add(reader.GetString(3));
+                    }
+                }
+
+            }
+
+            QuizListSendToClient(client, list);
         }
 
         static void HandleDeleteClass(Socket client, ServerRequest clientRequest)
@@ -379,7 +509,7 @@ namespace TackleServer
             //weird naming due to "public" being reserved in C# - i'm not bad at naming variables i swear
             string publicState = clientRequest.requestParameters[4];
 
-            string success = CreateQuiz(username, quizType,quizTitle,quizContent,publicState);
+            string success = CreateQuiz(username, quizType,quizTitle,quizContent,publicState,"False",false);
 
             CreateQuizSendToClient(client,success);
         }
@@ -557,7 +687,7 @@ namespace TackleServer
         }
 
         //Creates the new quiz row in the database
-        static string CreateQuiz(string username, string quizType, string quizTitle, string quizContent,string publicState)
+        static string CreateQuiz(string username, string quizType, string quizTitle, string quizContent,string publicState,string draftState, bool IDReturn)
         {
             //Escapes any apostrophies to prevent syntax errors/SQL injection
             quizTitle = quizTitle.Replace("'", "''");
@@ -567,15 +697,29 @@ namespace TackleServer
             {
                 databaseConnection.Open();
 
-                string SQL = $"INSERT INTO Quizzes (Username,QuizType,QuizName, QuizContent, Public) VALUES ('{username}','{quizType}','{quizTitle}','{quizContent}','{publicState}')";
+                string SQL = $"INSERT INTO Quizzes (Username,QuizType,QuizName, QuizContent, Public, Draft) VALUES ('{username}','{quizType}','{quizTitle}','{quizContent}','{publicState}','{draftState}')";
+
+                //If the ID return is needed, then return the autoincremented ID in the SQL query
+                if (IDReturn)
+                {
+                    SQL += "; SELECT last_insert_rowid();";
+                }
+                
                 using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
                 {
                     try
                     {
-                        int queryResponse = command.ExecuteNonQuery();
-
-                        Console.WriteLine($"New quiz created, title {quizTitle}");
-                        return "success";
+                        if (IDReturn)
+                        {
+                            string quizID = command.ExecuteScalar().ToString();
+                            return quizID;
+                        }
+                        else
+                        {
+                            command.ExecuteNonQuery();
+                            Console.WriteLine($"New quiz created, title {quizTitle}");
+                            return "success";
+                        }
                     }
                     catch
                     {
@@ -584,6 +728,44 @@ namespace TackleServer
                     }
                 }
             }
+        }
+
+        static string SetQuiz(string quizID, string classID, string username)
+        {
+            //checks that the teacher actually owns the class before they submit it
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                string SQL = $"SELECT * FROM Classes WHERE ClassID='{classID}' AND Username='{username}'";
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    var query = command.ExecuteScalar();
+
+                    //If there are no rows (if the teacher doesn't own the class) it will just return as failed
+                    if (query is null)
+                    {
+                        Console.WriteLine($"failed at the first hurdle! {username} {classID}");
+                        return "failed";
+                    }
+                }
+            }
+
+            //actually sets the quiz
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                string SQL = $"INSERT INTO SetQuizzes (QuizID, ClassID) VALUES ('{quizID}','{classID}')";
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    command.ExecuteNonQuery();
+                    return "success";
+                }
+            }
+
         }
     }
 
