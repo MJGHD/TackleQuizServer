@@ -77,6 +77,12 @@ namespace TackleServer
                 case "QUIZMARKINGVIEW":
                     HandleQuizAttemptReturn(client, clientRequest);
                     break;
+                case "QUIZMARKINGLIST":
+                    HandleMarkList(client, clientRequest);
+                    break;
+                case "FINISHMARKING":
+                    HandleFinishMarking(client, clientRequest);
+                    break;
                 case "CREATEQUIZ":
                     HandleCreateQuiz(client, clientRequest);
                     break;
@@ -101,6 +107,27 @@ namespace TackleServer
                 case "OPENQUIZ":
                     HandleOpenQuiz(client, clientRequest);
                     break;
+                case "GETLEADERBOARD":
+                    HandleLeaderboardGet(client, clientRequest);
+                    break;
+                case "HOMEWORKLIST":
+                    HandleHomeworkList(client, clientRequest);
+                    break;
+                case "REQUESTLIST":
+                    HandleRequestList(client, clientRequest);
+                    break;
+                case "ACCEPTREQUEST":
+                    HandleRequestAccept(client, clientRequest);
+                    break;
+                case "REMOVECLASSMEMBER":
+                    HandleRemoveClassMember(client, clientRequest);
+                    break;
+                case "CLASSMEMBERLIST":
+                    HandleClassMemberList(client, clientRequest);
+                    break;
+                case "TEACHERQUIZHISTORY":
+                    HandleTeacherQuizHistory(client, clientRequest);
+                    break;
             }
         }
 
@@ -113,7 +140,7 @@ namespace TackleServer
                 //Escapes any of apostrophes in the JSON
                 clientRequest.requestParameters[2] = clientRequest.requestParameters[2].Replace("'", "''");
 
-                string SQL = $"INSERT INTO QuizAttempts (QuizID,Username,QuizInfo) VALUES ('{clientRequest.requestParameters[0]}','{clientRequest.requestParameters[1]}','{clientRequest.requestParameters[2]}')";
+                string SQL = $"INSERT INTO QuizAttempts (QuizID,Username,QuizInfo, Correct) VALUES ('{clientRequest.requestParameters[0]}','{clientRequest.requestParameters[1]}','{clientRequest.requestParameters[2]}','{clientRequest.requestParameters[3]}')";
                 using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
                 {
                     int modifiedRows = command.ExecuteNonQuery();
@@ -238,10 +265,135 @@ namespace TackleServer
 
                         command.Reset();
 
-                        //Inserting the row that makes the user join the class
+                        //Putting the user request into the database
+                        SQL = $"INSERT INTO ClassRequests (ClassID,Username) VALUES ('{classID}','{username}')";
+                        command.CommandText = SQL;
+                        command.ExecuteNonQuery();
+
+                        Console.WriteLine($"User {username} at {client.RemoteEndPoint} requested to join class {classID}");
+                        JoinClassSendToClient(client, "success");
+                    }
+                    // was used to fix a bug once
+                    //catch (System.InvalidOperationException exception)
+                    //{
+                    //    Console.WriteLine(exception.Message);
+                    //}
+                    catch
+                    {
+                        Console.WriteLine($"User {username} at {client.RemoteEndPoint} failed to join class {classID}");
+                        JoinClassSendToClient(client, "failed");
+                    }
+                }
+            }
+        }
+
+        static void HandleRequestList(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+
+            string[] classes = GetTeacherClasses(username);
+
+            ClassRequests classRequests = new ClassRequests();
+
+            string SQL = RequestListSQL(classes);
+
+            //SQLite search
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    command.CommandText = SQL;
+                    var reader = command.ExecuteReader();
+
+                    while (reader.Read())
+                    {
+                        classRequests.classIDs.Add(reader.GetInt32(0).ToString());
+                        classRequests.usernames.Add(reader.GetString(1));
+                    }
+                }
+            }
+
+            ClassRequestSendToClient(client, classRequests);
+        }
+
+        static string RequestListSQL(string[] classes)
+        {
+            //the part that will be added to the SQL
+            string SQLConditional = "";
+
+            int counter = 0;
+
+            foreach (string ID in classes)
+            {
+                if (counter == 0)
+                {
+                    SQLConditional += $"'{ID}'";
+                }
+                else
+                {
+                    SQLConditional += $" OR ClassID='{ID}'";
+                }
+                counter += 1;
+            }
+
+            return $"SELECT ClassID, Username FROM ClassRequests WHERE ClassID={SQLConditional}";
+        }
+
+        static string[] GetTeacherClasses(string username)
+        {
+            //temporarily uses a list as it's dynamic
+            List<string> classes = new List<string>();
+
+            string SQL = $"SELECT ClassID FROM Classes WHERE Username='{username}'";
+
+            //SQLite search
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    command.CommandText = SQL;
+                    var reader = command.ExecuteReader();
+
+                    while (reader.Read())
+                    {
+                        classes.Add(reader.GetInt32(0).ToString());
+                    }
+                }
+            }
+
+            //returns list of classes as string array
+            return classes.ToArray();
+        }
+
+        static void HandleRequestAccept(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+            string classID = clientRequest.requestParameters[1];
+
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+                
+                string SQL = $"DELETE FROM ClassRequests WHERE ClassID='{classID}' AND Username='{username}'";
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    try
+                    {
+                        command.ExecuteNonQuery();
+
+                        command.Reset();
+
+                        //Inserting the user into the class
                         SQL = $"INSERT INTO UserClasses (ClassID,Username) VALUES ('{classID}','{username}')";
                         command.CommandText = SQL;
                         command.ExecuteNonQuery();
+
+                        command.Reset();
 
                         //Increasing the class' member count
                         SQL = $"UPDATE Classes SET MemberCount = MemberCount + 1 WHERE ClassID={classID}";
@@ -251,10 +403,6 @@ namespace TackleServer
                         Console.WriteLine($"User {username} at {client.RemoteEndPoint} joined class {classID}");
                         JoinClassSendToClient(client, "success");
                     }
-                    catch (System.InvalidOperationException exception)
-                    {
-                        Console.WriteLine(exception.Message);
-                    }
                     catch
                     {
                         Console.WriteLine($"User {username} at {client.RemoteEndPoint} failed to join class {classID}");
@@ -262,6 +410,119 @@ namespace TackleServer
                     }
                 }
             }
+        }
+
+        static void HandleRemoveClassMember(Socket client, ServerRequest clientRequest)
+        {
+            string classID = clientRequest.requestParameters[0];
+            string username = clientRequest.requestParameters[1];
+
+            string success;
+
+            try
+            {
+                using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+                {
+                    databaseConnection.Open();
+
+                    string SQL = $"DELETE FROM UserClasses WHERE ClassID='{classID}' AND Username='{username}'";
+
+                    using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                    {
+                        command.ExecuteNonQuery();
+                        success = "success";
+                    }
+                }
+            }
+            catch
+            {
+                success = "failed";
+            }
+
+            DeleteClassSendToClient(client, success);
+        }
+
+        static void HandleClassMemberList(Socket client, ServerRequest clientRequest)
+        {
+            string classID = clientRequest.requestParameters[0];
+            List<string> classMembers = new List<string>();
+
+            string SQL = $"SELECT Username FROM UserClasses WHERE ClassID='{classID}'";
+
+            //SQLite search
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    command.CommandText = SQL;
+                    var reader = command.ExecuteReader();
+
+                    while (reader.Read())
+                    {
+                        classMembers.Add(reader.GetString(0));
+                    }
+                }
+            }
+
+            ClassMemberListSendToClient(client, classMembers);
+        }
+
+        static void HandleMarkList(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+
+            string[] classes = GetTeacherClasses(username);
+
+            string[] quizzes = GetSetQuizzes(classes);
+
+            string SQL = MarkListSQL(quizzes);
+
+            MarkList markList = new MarkList();
+
+            //SQLite search
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    command.CommandText = SQL;
+                    var reader = command.ExecuteReader();
+
+                    while (reader.Read())
+                    {
+                        markList.quizIDs.Add(reader.GetInt32(0).ToString());
+                        markList.usernames.Add(reader.GetString(1));
+                    }
+                }
+            }
+
+            MarkListSendToClient(client, markList);
+        }
+
+        static string MarkListSQL(string[] setQuizzes)
+        {
+            //the part that will be added to the SQL
+            string SQLConditional = "";
+
+            int counter = 0;
+
+            foreach (string ID in setQuizzes)
+            {
+                if (counter == 0)
+                {
+                    SQLConditional += $"{ID}";
+                }
+                else
+                {
+                    SQLConditional += $" OR QuizID='{ID}'";
+                }
+            }
+
+            //return final SQL
+            return $"SELECT QuizID, Username FROM QuizAttempts WHERE QuizID='{SQLConditional}'";
         }
 
         static void HandleCreateClass(Socket client, ServerRequest clientRequest)
@@ -358,6 +619,66 @@ namespace TackleServer
                     databaseConnection.Open();
 
                     string SQL = $"DELETE FROM Quizzes WHERE QuizID='{quizID}'";
+
+                    using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                    {
+                        command.ExecuteNonQuery();
+                        success = "success";
+                    }
+                }
+            }
+            catch
+            {
+                success = "failed";
+            }
+
+            //Sends whether it was a success to the client
+            CreateQuizSendToClient(client, success);
+        }
+
+        static void HandleLeaderboardGet(Socket client, ServerRequest clientRequest)
+        {
+            string quizID = clientRequest.requestParameters[0];
+
+            Leaderboards leaderboard = new Leaderboards();
+
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                string SQL = $"SELECT Username, Correct FROM QuizAttempts WHERE QuizID='{quizID}'";
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    var reader = command.ExecuteReader();
+
+                    while (reader.Read())
+                    {
+                        leaderboard.usernames.Add(reader.GetString(0));
+                        leaderboard.correct.Add(reader.GetInt32(1).ToString());
+                    }
+                }
+            }
+
+            //Sends leaderboard to client
+            LeaderboardSendToClient(client, leaderboard);
+        }
+
+        static void HandleFinishMarking(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+            string quizID = clientRequest.requestParameters[1];
+            string correctTotal = clientRequest.requestParameters[2];
+
+            string success;
+
+            try
+            {
+                using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+                {
+                    databaseConnection.Open();
+
+                    string SQL = $"UPDATE QuizAttempts SET Correct = '{correctTotal}' WHERE QuizID='{quizID}' AND Username='{username}'";
 
                     using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
                     {
@@ -558,6 +879,160 @@ namespace TackleServer
             QuizListSendToClient(client, list);
         }
 
+        static void HandleHomeworkList(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+
+            //Replaces UTF-8 \0 whitespace with blank
+            username = username.Replace("\0", string.Empty);
+
+            //Gets the classes that the user is a member of
+            string[] classes = GetClasses(username);
+
+            //Gets the quiz IDs of the quizzes that are set for the classes that the student is a member of
+            string[] setQuizzes = GetSetQuizzes(classes);
+
+            string SQL = HomeworkListSQL(setQuizzes);
+
+            QuizList list = new QuizList();
+
+            //SQLite search for the list of set quizzes
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    command.CommandText = SQL;
+                    var reader = command.ExecuteReader();
+
+                    while (reader.Read())
+                    {
+                        list.quizIDs.Add(reader.GetInt32(0));
+                        list.usernames.Add(reader.GetString(1));
+                        list.quizType.Add(reader.GetString(2));
+                        list.quizNames.Add(reader.GetString(3));
+                    }
+                }
+
+                //goes through each quiz ID getting the highest score
+                foreach (int quizID in list.quizIDs)
+                {
+                    //High score search
+                    SQL = $"SELECT Correct FROM QuizAttempts WHERE Username = '{username}' AND QuizID='{quizID}' ORDER BY Correct DESC LIMIT 1";
+
+                    using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                    {
+                        command.CommandText = SQL;
+                        var reader = command.ExecuteReader();
+
+                        //if there's a response, add that, else the user hasn't taken the quiz yet
+                        if (reader.Read())
+                        {
+                            list.topMarks.Add(reader.GetInt32(0).ToString());
+                        }
+                        else
+                        {
+                            list.topMarks.Add("N/A");
+                        }
+                    }
+                }
+            }
+
+            QuizListSendToClient(client, list);
+        }
+
+        static string[] GetClasses(string username)
+        {
+            //temporarily uses a list as it's dynamic
+            List<string> classes = new List<string>();
+
+            string SQL = $"SELECT ClassID FROM UserClasses WHERE Username='{username}'";
+
+            //SQLite search
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    command.CommandText = SQL;
+                    var reader = command.ExecuteReader();
+
+                    while (reader.Read())
+                    {
+                        classes.Add(reader.GetInt32(0).ToString());
+                    }
+                }
+            }
+
+            //returns list of classes as string array
+            return classes.ToArray();
+        }
+
+        static string[] GetSetQuizzes(string[] classes)
+        {
+            List<string> quizIDs = new List<string>();
+
+            //if there's a class, or classes, then iterate through them getting the quiz IDs set for that class
+            if(classes.Length != 0)
+            {
+                foreach(string classID in classes)
+                {
+                    string SQL = $"SELECT QuizID FROM SetQuizzes WHERE ClassID='{classID}'";
+
+                    //SQLite search
+                    using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+                    {
+                        databaseConnection.Open();
+
+                        using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                        {
+                            command.CommandText = SQL;
+                            var reader = command.ExecuteReader();
+
+                            while (reader.Read())
+                            {
+                                quizIDs.Add(reader.GetInt32(0).ToString());
+                            }
+                        }
+                    }
+
+                }
+
+                //returns list of classes as string array
+                return quizIDs.ToArray();
+            }
+            else
+            {
+                //just return 0, as there isn't a quiz ID 0 so it'll just be empty
+                return new string[] { "0" };
+            }
+        }
+
+        static string HomeworkListSQL(string[] setQuizzes)
+        {
+            //the part that will be added to the SQL
+            string SQLConditional = "";
+
+            int counter = 0;
+
+            foreach(string ID in setQuizzes)
+            {
+                if(counter == 0)
+                {
+                    SQLConditional += $"{ID}";
+                }
+                else
+                {
+                    SQLConditional += $" OR QuizID='{ID}'";
+                }
+            }
+
+            //return final SQL
+            return $"SELECT QuizID, Username, QuizType, QuizName FROM Quizzes WHERE QuizID='{SQLConditional}'";
+        }
+
         static void HandleOpenQuiz(Socket client, ServerRequest clientRequest)
         {
             int quizID = Int32.Parse(clientRequest.requestParameters[0]);
@@ -588,6 +1063,71 @@ namespace TackleServer
             OpenQuizSendToClient(client, JSON);
         }
 
+        static void HandleTeacherQuizHistory(Socket client, ServerRequest clientRequest)
+        {
+            string username = clientRequest.requestParameters[0];
+
+            SetQuizResponse setQuizResponse = new SetQuizResponse();
+
+            string[] classes = GetTeacherClasses(username);
+
+            setQuizResponse.quizIDs = GetSetQuizzes(classes);
+
+            string SQL = TeacherQuizHistorySQL(setQuizResponse.quizIDs);
+
+            QuizList list = new QuizList();
+
+            using (SQLiteConnection databaseConnection = new SQLiteConnection("Data Source=TackleDatabase.db;Version=3;"))
+            {
+                databaseConnection.Open();
+
+                using (SQLiteCommand command = new SQLiteCommand(SQL, databaseConnection))
+                {
+                    command.CommandText = SQL;
+                    var reader = command.ExecuteReader();
+
+                    while (reader.Read())
+                    {
+                        //checking if the quiz ID is unique in the list
+                        if (!(list.quizIDs.Contains(reader.GetInt32(0))))
+                        {
+                            list.quizIDs.Add(reader.GetInt32(0));
+                        }
+
+                        list.usernames.Add(reader.GetString(1));
+                        list.quizContents.Add(reader.GetString(2));
+                    }
+                }
+
+            }
+
+            setQuizResponse.attemptList = list;
+
+            TeacherQuizHistorySendToClient(client, setQuizResponse);
+        }
+
+        static string TeacherQuizHistorySQL(string[] quizzes)
+        {
+            //the part that will be added to the SQL
+            string SQLConditional = "";
+
+            int counter = 0;
+
+            foreach (string quizID in quizzes)
+            {
+                if (counter == 0)
+                {
+                    SQLConditional += $"{quizID}";
+                }
+                else
+                {
+                    SQLConditional += $" OR QuizID='{quizID}'";
+                }
+            }
+
+            return $"SELECT * FROM QuizAttempts WHERE QuizID='{SQLConditional}'";
+        }
+
         //Serialises the log in/sign up response object to a JSON string
         static string Serialise(LogInResponse response)
         {
@@ -602,6 +1142,13 @@ namespace TackleServer
             return json;
         }
 
+        //Serialises teacher set quiz history response
+        static string Serialise(SetQuizResponse setQuizResponse)
+        {
+            string json = JsonConvert.SerializeObject(setQuizResponse, Formatting.Indented);
+            return json;
+        }
+
         //Serialises ClassList list
         static string Serialise(ClassList list)
         {
@@ -609,7 +1156,36 @@ namespace TackleServer
             return json;
         }
 
-        //Sends the server response to the client for each type of request
+        //Serialises MarkList list
+        static string Serialise(MarkList list)
+        {
+            string json = JsonConvert.SerializeObject(list, Formatting.Indented);
+            return json;
+        }
+
+        //Serialises class joining requests
+        static string Serialise(ClassRequests list)
+        {
+            string json = JsonConvert.SerializeObject(list, Formatting.Indented);
+            return json;
+        }
+
+        //serialises leaderboard
+        static string Serialise(Leaderboards leaderboard)
+        {
+            string json = JsonConvert.SerializeObject(leaderboard, Formatting.Indented);
+            return json;
+        }
+
+        //Serialises the list of class members
+        static string Serialise(List<string> list)
+        {
+            string json = JsonConvert.SerializeObject(list, Formatting.Indented);
+            return json;
+        }
+
+
+        //Sends the server response to the client for each type of request, although many of the types of request use the same one because they're similar
 
         static void LogInSendToClient(Socket client, LogInResponse response)
         {
@@ -669,7 +1245,52 @@ namespace TackleServer
             client.Close();
         }
 
+        static void LeaderboardSendToClient(Socket client, Leaderboards leaderboard)
+        {
+            string jsonResponse = Serialise(leaderboard);
+            byte[] responseBytes = new byte[1000];
+            responseBytes = Encoding.UTF8.GetBytes(jsonResponse);
+            client.Send(responseBytes);
+            client.Close();
+        }
+
+        static void TeacherQuizHistorySendToClient(Socket client, SetQuizResponse setQuizResponse)
+        {
+            string jsonResponse = Serialise(setQuizResponse);
+            byte[] responseBytes = new byte[1000];
+            responseBytes = Encoding.UTF8.GetBytes(jsonResponse);
+            client.Send(responseBytes);
+            client.Close();
+        }
+
         static void ClassListSendToClient(Socket client, ClassList list)
+        {
+            string jsonResponse = Serialise(list);
+            byte[] responseBytes = new byte[1000];
+            responseBytes = Encoding.UTF8.GetBytes(jsonResponse);
+            client.Send(responseBytes);
+            client.Close();
+        }
+
+        static void MarkListSendToClient(Socket client, MarkList list)
+        {
+            string jsonResponse = Serialise(list);
+            byte[] responseBytes = new byte[1000];
+            responseBytes = Encoding.UTF8.GetBytes(jsonResponse);
+            client.Send(responseBytes);
+            client.Close();
+        }
+
+        static void ClassMemberListSendToClient(Socket client, List<string> classMembers)
+        {
+            string jsonResponse = Serialise(classMembers);
+            byte[] responseBytes = new byte[1000];
+            responseBytes = Encoding.UTF8.GetBytes(jsonResponse);
+            client.Send(responseBytes);
+            client.Close();
+        }
+
+        static void ClassRequestSendToClient(Socket client, ClassRequests list)
         {
             string jsonResponse = Serialise(list);
             byte[] responseBytes = new byte[1000];
@@ -788,6 +1409,8 @@ namespace TackleServer
         public List<string> usernames;
         public List<string> quizType;
         public List<string> quizNames;
+        public List<string> quizContents;
+        public List<string> topMarks;
 
         public QuizList()
         {
@@ -796,6 +1419,22 @@ namespace TackleServer
             usernames = new List<string>();
             quizType = new List<string>();
             quizNames = new List<string>();
+            quizContents = new List<string>();
+            topMarks = new List<string>();
+        }
+    }
+
+    //List of class joining requests
+    class ClassRequests
+    {
+        public List<string> classIDs;
+        public List<string> usernames;
+
+        public ClassRequests()
+        {
+            //Initiates all of the lists
+            classIDs = new List<string>();
+            usernames = new List<string>();
         }
     }
 
@@ -808,6 +1447,38 @@ namespace TackleServer
         {
             classIDs = new List<int>();
             memberCounts = new List<int>();
+        }
+    }
+
+    //used in TeacherQuizHistory
+    class SetQuizResponse
+    {
+        public string[] quizIDs;
+        public QuizList attemptList;
+    }
+
+    //Used in MarkListViewModel
+    class MarkList
+    {
+        public List<string> usernames;
+        public List<string> quizIDs;
+
+        public MarkList()
+        {
+            this.usernames = new List<string>();
+            this.quizIDs = new List<string>();
+        }
+    }
+
+    class Leaderboards
+    {
+        public List<string> usernames;
+        public List<string> correct;
+
+        public Leaderboards()
+        {
+            this.usernames = new List<string>();
+            this.correct = new List<string>();
         }
     }
 }
